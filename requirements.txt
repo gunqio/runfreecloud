@@ -2,3 +2,4 @@ cloakbrowser[geoip]
 playwright
 ddddocr
 Pillow
+ 
