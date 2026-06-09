@@ -44,14 +44,19 @@ jobs:
           pip install -r requirements.txt
           python -c "from cloakbrowser import ensure_binary; ensure_binary()"
 
-      # ✅ STEP 1：拉取私库脚本（新增）
-      - name: 拉取私库 sign_cloakbrowser.py
+      # ====================== 【私库拉取脚本（已修复）】 ======================
+      - name: 下载私有仓库签到脚本
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           mkdir -p private_repo
-          curl -L \
-            -H "Authorization: token ${{ secrets.PRIVATE_TOKEN }}" \
-            https://raw.githubusercontent.com/gunqio/zhiyong/main/sign_cloakbrowser.py \
-            -o private_repo/sign_cloakbrowser.py
+          curl -L -H "Authorization: token $GH_TOKEN" \
+            "https://raw.githubusercontent.com/gunqio/zhiyong/main/sign_cloakbrowser.py" \
+            -o "private_repo/sign_cloakbrowser.py"
+          
+          echo "==== 脚本下载验证 ===="
+          head -20 private_repo/sign_cloakbrowser.py
+      # ======================================================================
 
       - name: 下载并启动 Xray 代理
         env:
@@ -104,7 +109,7 @@ jobs:
             echo "录屏进程 PID: $RECORD_PID"
           fi
 
-          # ✅ STEP 2：改这里（只换脚本路径）
+          # 正确运行私库脚本
           timeout 270 python private_repo/sign_cloakbrowser.py || echo "脚本退出码: $?"
 
           echo "=== 截图目录内容 ==="
@@ -129,7 +134,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
-      - name: 上传录屏（仅手动录屏时）
+      - name: 上传录屏
         if: always() && github.event.inputs.enable_recording == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -140,30 +145,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
-      - name: 清理旧 Runs（只保留最近 2 个）
+      - name: 清理旧 Runs
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           REPO="${{ github.repository }}"
           WORKFLOW_NAME="v2ray-sign.yml"
-
-          WORKFLOW_ID=$(gh api \
-            "repos/${REPO}/actions/workflows" \
-            --jq ".workflows[] | select(.path | endswith(\"${WORKFLOW_NAME}\")) | .id")
-
-          if [ -z "$WORKFLOW_ID" ]; then
-            echo "未找到 workflow，跳过清理"
-            exit 0
-          fi
-
-          RUN_IDS=$(gh api \
-            "repos/${REPO}/actions/workflows/${WORKFLOW_ID}/runs?per_page=100" \
-            --jq '.workflow_runs | sort_by(.run_number) | reverse | .[2:] | .[].id')
-
+          WORKFLOW_ID=$(gh api "repos/${REPO}/actions/workflows" --jq ".workflows[] | select(.path | endswith(\"${WORKFLOW_NAME}\")) | .id")
+          if [ -z "$WORKFLOW_ID" ]; then echo "未找到工作流"; exit 0; fi
+          RUN_IDS=$(gh api "repos/${REPO}/actions/workflows/${WORKFLOW_ID}/runs?per_page=100" --jq '.workflow_runs | sort_by(.run_number) | reverse | .[2:] | .[].id')
           for RUN_ID in $RUN_IDS; do
-            echo "删除 run: $RUN_ID"
-            gh api -X DELETE "repos/${REPO}/actions/runs/${RUN_ID}" || true
+            gh api -X DELETE "repos/${REPO}/actions/runs/${RUN_ID}" || echo "删除失败"
           done
-
           echo "✅ 清理完成"
