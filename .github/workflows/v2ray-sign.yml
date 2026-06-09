@@ -44,6 +44,15 @@ jobs:
           pip install -r requirements.txt
           python -c "from cloakbrowser import ensure_binary; ensure_binary()"
 
+      # ✅ STEP 1：拉取私库脚本（新增）
+      - name: 拉取私库 sign_cloakbrowser.py
+        run: |
+          mkdir -p private_repo
+          curl -L \
+            -H "Authorization: token ${{ secrets.PRIVATE_TOKEN }}" \
+            https://raw.githubusercontent.com/gunqio/zhiyong/main/sign_cloakbrowser.py \
+            -o private_repo/sign_cloakbrowser.py
+
       - name: 下载并启动 Xray 代理
         env:
           V2RAY_CONFIG: ${{ secrets.V2RAY_CONFIG }}
@@ -69,10 +78,8 @@ jobs:
           DISPLAY: ":99"
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: "llvmpipe"
-          # schedule 触发时 github.event_name == 'schedule'，enable_recording 输入不存在，默认空字符串
           ENABLE_RECORDING: ${{ github.event.inputs.enable_recording }}
         run: |
-          # 判断是否录屏：仅当手动触发且选择 true 时才录屏
           if [ "$ENABLE_RECORDING" = "true" ]; then
             DO_RECORD=true
             echo "📹 录屏已开启"
@@ -81,13 +88,11 @@ jobs:
             echo "📹 录屏已关闭（定时任务默认不录屏）"
           fi
 
-          # 启动 Xvfb 虚拟显示器
           Xvfb :99 -screen 0 1280x720x24 +extension RANDR &
           XVFB_PID=$!
           sleep 2
           DISPLAY=:99 xdpyinfo > /dev/null 2>&1 && echo "Xvfb 就绪" || echo "Xvfb 启动异常"
 
-          # 按需启动录屏
           RECORD_PID=""
           if [ "$DO_RECORD" = "true" ]; then
             ffmpeg -f x11grab -video_size 1280x720 -framerate 15 -i :99 \
@@ -99,13 +104,12 @@ jobs:
             echo "录屏进程 PID: $RECORD_PID"
           fi
 
-          # 运行签到脚本
-          timeout 270 python sign_cloakbrowser.py || echo "脚本退出码: $?"
+          # ✅ STEP 2：改这里（只换脚本路径）
+          timeout 270 python private_repo/sign_cloakbrowser.py || echo "脚本退出码: $?"
 
           echo "=== 截图目录内容 ==="
           ls -la ./screenshots/ || echo "截图目录不存在"
 
-          # 停止录屏（如果开启了）
           if [ -n "$RECORD_PID" ]; then
             sleep 2
             kill $RECORD_PID 2>/dev/null || true
@@ -144,7 +148,6 @@ jobs:
           REPO="${{ github.repository }}"
           WORKFLOW_NAME="v2ray-sign.yml"
 
-          echo "获取 workflow ID..."
           WORKFLOW_ID=$(gh api \
             "repos/${REPO}/actions/workflows" \
             --jq ".workflows[] | select(.path | endswith(\"${WORKFLOW_NAME}\")) | .id")
@@ -153,20 +156,14 @@ jobs:
             echo "未找到 workflow，跳过清理"
             exit 0
           fi
-          echo "Workflow ID: $WORKFLOW_ID"
 
-          echo "获取全部 runs..."
           RUN_IDS=$(gh api \
             "repos/${REPO}/actions/workflows/${WORKFLOW_ID}/runs?per_page=100" \
             --jq '.workflow_runs | sort_by(.run_number) | reverse | .[2:] | .[].id')
 
-          if [ -z "$RUN_IDS" ]; then
-            echo "没有需要清理的旧 runs"
-            exit 0
-          fi
-
           for RUN_ID in $RUN_IDS; do
             echo "删除 run: $RUN_ID"
-            gh api -X DELETE "repos/${REPO}/actions/runs/${RUN_ID}" || echo "删除 $RUN_ID 失败，跳过"
+            gh api -X DELETE "repos/${REPO}/actions/runs/${RUN_ID}" || true
           done
+
           echo "✅ 清理完成"
