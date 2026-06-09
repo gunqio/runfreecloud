@@ -2,7 +2,7 @@ name: RUN签到 (CloakBrowser)
 
 on:
   schedule:
-    - cron: '30 1 * * *'
+    - cron: '34 13 * * *'
   workflow_dispatch:
     inputs:
       enable_recording:
