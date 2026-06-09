@@ -45,7 +45,7 @@ jobs:
           python -c "from cloakbrowser import ensure_binary; ensure_binary()"
 
       # ====================== 【私库拉取脚本（已修复）】 ======================
-      - name: 下载私有仓库签到脚本
+      - name: 下载私库
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
